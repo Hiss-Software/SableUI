@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(sableui VERSION 0.1.0 LANGUAGES C CXX)
+project(sableui VERSION 0.2.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,10 +15,27 @@ if(SABLEUI_WARNINGS_AS_ERRORS)
     endif()
 endif()
 
+# Version ----------------------------------------------------------------------
+
+# The library version is derived from the latest git tag (see
+# cmake/gen_version.cmake). The project() version above is only a fallback
+# for builds from a source archive without a .git directory. The header is
+# regenerated on every build, so re-tagging is enough to bump the version.
+set(SABLEUI_VERSION_HEADER ${CMAKE_BINARY_DIR}/sableui_version.h)
+add_custom_target(sableui_version ALL
+    COMMAND ${CMAKE_COMMAND}
+        -DGIT_DIR=${CMAKE_SOURCE_DIR}
+        -DOUT_FILE=${SABLEUI_VERSION_HEADER}
+        -P ${CMAKE_SOURCE_DIR}/cmake/gen_version.cmake
+    BYPRODUCTS ${SABLEUI_VERSION_HEADER}
+    VERBATIM)
+
 # Core library -----------------------------------------------------------------
 
 add_library(sableui SHARED src/sableui_api.cpp)
+add_dependencies(sableui sableui_version)
 target_include_directories(sableui
+    PRIVATE ${CMAKE_BINARY_DIR}
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>)
