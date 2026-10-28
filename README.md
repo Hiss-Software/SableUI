@@ -1,5 +1,7 @@
 # SableUI
 
+<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2IiB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiI+CiAgPGNpcmNsZSBjeD0iMTI4IiBjeT0iMTI4IiByPSIxMjQiIGZpbGw9IiMwMDAwMDAiLz4KICA8dGV4dCB4PSIxMjgiIHk9IjEzNSIgZm9udC1mYW1pbHk9IidPbGQgRW5nbGlzaCBUZXh0IE1UJywgc2VyaWYiIGZvbnQtc2l6ZT0iMTgwIiBmaWxsPSIjRkZGRkZGIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIj5IPC90ZXh0Pgo8L3N2Zz4=" width="128" />
+
 SableUI is a small, dependency-free GUI library for Windows, built on
 Direct2D and DirectWrite and exposed through a stable C ABI. It ships a
 familiar widget set (buttons, labels, checkboxes, text fields, text areas,
