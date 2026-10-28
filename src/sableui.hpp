@@ -20,16 +20,20 @@
 #ifndef _UNICODE
 #define _UNICODE
 #endif
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 
 #include <windows.h>
 #include <windowsx.h>
 #include <objbase.h>
 #include <d2d1.h>
+#include <d2d1helper.h>
 #include <dwrite.h>
 #include <dwmapi.h>
-#include <wrl/client.h>
 
 #include <algorithm>
 #include <cmath>
@@ -47,6 +51,43 @@
 #endif
 
 namespace sableui {
+
+// Minimal ComPtr replacement for MinGW, which has no <wrl/client.h>.
+// Implements only what this file uses: Get, operator->, Attach,
+// ReleaseAndGetAddressOf, Reset, and move assignment.
+template <class T>
+class ComPtr {
+public:
+    ComPtr() = default;
+    ~ComPtr() { Reset(); }
+
+    ComPtr(const ComPtr&) = delete;
+    ComPtr& operator=(const ComPtr&) = delete;
+
+    ComPtr(ComPtr&& o) noexcept : p_(o.p_) { o.p_ = nullptr; }
+    ComPtr& operator=(ComPtr&& o) noexcept {
+        if (this != &o) { Reset(); p_ = o.p_; o.p_ = nullptr; }
+        return *this;
+    }
+
+    T* Get() const { return p_; }
+    T* operator->() const { return p_; }
+    explicit operator bool() const { return p_ != nullptr; }
+
+    void Attach(T* p) { Reset(); p_ = p; }
+
+    T** ReleaseAndGetAddressOf() {
+        Reset();
+        return &p_;
+    }
+
+    void Reset() {
+        if (p_) { p_->Release(); p_ = nullptr; }
+    }
+
+private:
+    T* p_ = nullptr;
+};
 
 struct Color {
     float r, g, b, a;
@@ -146,9 +187,6 @@ public:
 
 // Direct2D backend. DPI scaling is applied through the world transform, so
 // stroke widths and font sizes scale together with geometry.
-//
-// Note: WRL ComPtr has no implicit conversion to the raw interface pointer,
-// so every D2D call passes brush_.Get() explicitly.
 class D2DRenderer final : public Renderer {
 public:
     D2DRenderer() = default;
@@ -169,8 +207,6 @@ public:
         if (!target_) return true;
         const HRESULT hr = target_->EndDraw();
         if (hr == D2DERR_RECREATE_TARGET) {
-            // Device lost: drop the device-dependent resources but keep the
-            // (expensive) factories — they survive a target loss just fine.
             DiscardTarget();
             return false;
         }
@@ -186,8 +222,6 @@ public:
         target_->Clear(ToD2D(color));
     }
 
-    // PushAxisAlignedClip ignores the world transform, so the rect must be
-    // scaled here explicitly.
     void PushClipRect(float x, float y, float w, float h) override {
         if (!target_) return;
         const D2D1_RECT_F r = D2D1::RectF(x * scale_, y * scale_,
@@ -271,14 +305,12 @@ public:
                            format, ToRectF(x, y, w, h), brush_.Get());
     }
 
-    // Caret/selection metrics for text fields. Layouts are built unscaled,
-    // so the returned DIP coordinates need no DPI correction.
     float TextAdvance(const std::wstring& text, float font_size,
                       int index) override {
         if (text.empty() || index <= 0) return 0.0f;
         IDWriteTextLayout* raw = CreateLayout(text, font_size);
         if (!raw) return 0.0f;
-        Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+        ComPtr<IDWriteTextLayout> layout;
         layout.Attach(raw);
         const UINT32 pos = static_cast<UINT32>(
             std::min<int>(index, static_cast<int>(text.size())));
@@ -294,10 +326,8 @@ public:
         if (text.empty()) return 0;
         IDWriteTextLayout* raw = CreateLayout(text, font_size);
         if (!raw) return 0;
-        Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+        ComPtr<IDWriteTextLayout> layout;
         layout.Attach(raw);
-        // Query the actual line height so we hit-test against a real Y
-        // inside the first line instead of a magic constant.
         DWRITE_LINE_METRICS lm{};
         UINT32 lineCount = 0;
         FLOAT y = 1.0f;
@@ -328,8 +358,6 @@ private:
         return D2D1::RectF(x, y, x + w, y + h);
     }
 
-    // Cache key: raw bits of the float size. Avoids collisions of the old
-    // quantization scheme (14.2f and 14.3f used to share a slot).
     IDWriteTextFormat* GetFormat(float px) {
         uint32_t key = 0;
         static_assert(sizeof(px) == sizeof(key), "unexpected float size");
@@ -369,18 +397,20 @@ private:
         const unsigned h = static_cast<unsigned>(std::max(1L, rc.bottom - rc.top));
 
         if (!factory_) {
-            if (FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                                         __uuidof(ID2D1Factory),
-                                         reinterpret_cast<void**>(
-                                             factory_.ReleaseAndGetAddressOf())))) {
+            if (FAILED(D2D1CreateFactory(
+                    D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                    IID_ID2D1Factory, nullptr,
+                    reinterpret_cast<void**>(
+                        factory_.ReleaseAndGetAddressOf())))) {
                 return false;
             }
         }
         if (!write_) {
-            if (FAILED(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
-                                           __uuidof(IDWriteFactory),
-                                           reinterpret_cast<IUnknown**>(
-                                               write_.ReleaseAndGetAddressOf())))) {
+            if (FAILED(DWriteCreateFactory(
+                    DWRITE_FACTORY_TYPE_SHARED,
+                    IID_IDWriteFactory,
+                    reinterpret_cast<IUnknown**>(
+                        write_.ReleaseAndGetAddressOf())))) {
                 return false;
             }
         }
@@ -388,32 +418,30 @@ private:
         if (FAILED(factory_->CreateHwndRenderTarget(
                 D2D1::RenderTargetProperties(),
                 D2D1::HwndRenderTargetProperties(hwnd, D2D1::SizeU(w, h)),
-                &target_))) {
+                target_.ReleaseAndGetAddressOf()))) {
             return false;
         }
 
-        if (FAILED(target_->CreateSolidColorBrush(D2D1_COLOR_F{0, 0, 0, 1},
-                                                  &brush_))) {
-            target_ = nullptr;
+        if (FAILED(target_->CreateSolidColorBrush(
+                D2D1_COLOR_F{0, 0, 0, 1},
+                brush_.ReleaseAndGetAddressOf()))) {
+            target_.Reset();
             return false;
         }
         return true;
     }
 
-    // Drops only the device-dependent resources. The D2D and DWrite
-    // factories survive a target loss and must not be recreated.
     void DiscardTarget() {
         formats_.clear();
-        brush_   = nullptr;
-        target_  = nullptr;
+        brush_.Reset();
+        target_.Reset();
     }
 
-    Microsoft::WRL::ComPtr<ID2D1Factory> factory_;
-    Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> target_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
-    Microsoft::WRL::ComPtr<IDWriteFactory> write_;
-    std::unordered_map<uint32_t, Microsoft::WRL::ComPtr<IDWriteTextFormat>>
-        formats_;
+    ComPtr<ID2D1Factory> factory_;
+    ComPtr<ID2D1HwndRenderTarget> target_;
+    ComPtr<ID2D1SolidColorBrush> brush_;
+    ComPtr<IDWriteFactory> write_;
+    std::unordered_map<uint32_t, ComPtr<IDWriteTextFormat>> formats_;
     float scale_ = 1.0f;
 };
 

@@ -32,20 +32,44 @@ add_custom_target(sableui_version ALL
 
 # Core library -----------------------------------------------------------------
 
-add_library(sableui SHARED src/sableui_api.cpp)
+add_library(sableui SHARED
+    src/sableui_api.cpp)
+
 add_dependencies(sableui sableui_version)
+
 target_include_directories(sableui
     PRIVATE ${CMAKE_BINARY_DIR}
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>)
+
 target_compile_definitions(sableui PRIVATE SABLEUI_BUILDING)
-target_link_libraries(sableui PRIVATE d2d1 dwrite dwmapi user32 gdi32)
+target_compile_definitions(sableui PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+
+# Common Windows libraries.
+target_link_libraries(sableui PRIVATE d2d1 dwrite dwmapi ole32 user32 gdi32)
+
 set_target_properties(sableui PROPERTIES OUTPUT_NAME "sableui")
 
-if(NOT MSVC)
-    target_compile_options(sableui PRIVATE -Wall -Wextra -Wpedantic -fms-extensions)
-    target_link_options(sableui PRIVATE -static-libstdc++ -static-libgcc -static)
+if(MSVC)
+    # MSVC: warnings, UTF-8 source encoding, multi-threaded runtime.
+    target_compile_options(sableui PRIVATE
+        /W4
+        /permissive-
+        /utf-8
+        /Zc:__cplusplus
+        /EHsc)
+    target_compile_definitions(sableui PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+    # GCC / Clang (MinGW-w64).
+    target_compile_options(sableui PRIVATE
+        -Wall -Wextra -Wpedantic
+        -fms-extensions
+        -Wno-cast-function-type)
+    target_link_options(sableui PRIVATE
+        -static-libstdc++
+        -static-libgcc
+        -static)
 endif()
 
 # Installation -----------------------------------------------------------------
@@ -56,5 +80,6 @@ install(TARGETS sableui
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
 install(FILES include/sableui/sableui.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/sableui)
