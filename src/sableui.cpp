@@ -4,6 +4,7 @@
 
 #include "sableui.hpp"
 
+#include <cstring>
 #include <new>
 #include <string>
 
@@ -17,7 +18,9 @@ void SetError(const char* msg) {
     g_lastError[sizeof(g_lastError) - 1] = '\0';
 }
 
-std::wstring FromW(const wchar_t* s) { return s ? std::wstring(s) : std::wstring(); }
+std::wstring FromW(const wchar_t* s) {
+    return s ? std::wstring(s) : std::wstring();
+}
 
 sableui::Window* W(sabWindow window) {
     return reinterpret_cast<sableui::Window*>(window);
@@ -28,24 +31,35 @@ sableui::Window* W(sabWindow window) {
 // --- Window lifecycle ----------------------------------------------------------
 
 SABLEUI_API sabWindow sabCreateWindow(const wchar_t* title, int width, int height) {
-    if (!title || !*title) { SetError("sabCreateWindow: title is NULL or empty"); return nullptr; }
-    if (width <= 0 || height <= 0) { SetError("sabCreateWindow: invalid size"); return nullptr; }
+    if (width <= 0 || height <= 0) {
+        SetError("sabCreateWindow: invalid size");
+        return nullptr;
+    }
     auto* win = new (std::nothrow) sableui::Window();
-    if (!win) { SetError("sabCreateWindow: out of memory"); return nullptr; }
+    if (!win) {
+        SetError("sabCreateWindow: out of memory");
+        return nullptr;
+    }
     std::string err;
-    if (!win->Create(title, width, height, &err)) {
-        SetError(err.c_str());
+    if (!win->Create(FromW(title), width, height, &err)) {
+        SetError(err.empty() ? "sabCreateWindow: failed" : err.c_str());
         delete win;
         return nullptr;
     }
+    SetError("no error");
     return reinterpret_cast<sabWindow>(win);
 }
 
-SABLEUI_API void sabDestroyWindow(sabWindow window) { delete W(window); }
+SABLEUI_API void sabDestroyWindow(sabWindow window) {
+    delete W(window);
+}
 
 SABLEUI_API void sabRun(sabWindow window) {
     sableui::Window* w = W(window);
-    if (!w) { SetError("sabRun: NULL window handle"); return; }
+    if (!w) {
+        SetError("sabRun: NULL window handle");
+        return;
+    }
     w->Run();
 }
 
@@ -71,7 +85,12 @@ SABLEUI_API void sabCloseWindow(sabWindow window) {
 
 SABLEUI_API void sabGetClientSize(sabWindow window, int* width, int* height) {
     sableui::Window* w = W(window);
-    if (!w) { SetError("sabGetClientSize: NULL window handle"); return; }
+    if (!w) {
+        SetError("sabGetClientSize: NULL window handle");
+        if (width) *width = 0;
+        if (height) *height = 0;
+        return;
+    }
     w->ClientSize(width, height);
 }
 
@@ -82,85 +101,93 @@ SABLEUI_API void sabInvalidate(sabWindow window) {
 // --- Events ---------------------------------------------------------------------
 
 SABLEUI_API void sabOnMouseDown(sabWindow window, sabMouseButtonCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnMouseDown([cb, userdata](int button, int x, int y) {
-            if (cb) cb(userdata, button, x, y);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnMouseDown(nullptr); return; }
+    w->OnMouseDown([cb, userdata](int button, int x, int y) {
+        cb(userdata, button, x, y);
+    });
 }
 
 SABLEUI_API void sabOnMouseUp(sabWindow window, sabMouseButtonCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnMouseUp([cb, userdata](int button, int x, int y) {
-            if (cb) cb(userdata, button, x, y);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnMouseUp(nullptr); return; }
+    w->OnMouseUp([cb, userdata](int button, int x, int y) {
+        cb(userdata, button, x, y);
+    });
 }
 
 SABLEUI_API void sabOnMouseMove(sabWindow window, sabMouseMoveCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnMouseMove([cb, userdata](int x, int y) {
-            if (cb) cb(userdata, x, y);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnMouseMove(nullptr); return; }
+    w->OnMouseMove([cb, userdata](int x, int y) {
+        cb(userdata, x, y);
+    });
 }
 
 SABLEUI_API void sabOnMouseWheel(sabWindow window, sabWheelCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnMouseWheel([cb, userdata](int delta, int x, int y) {
-            if (cb) cb(userdata, delta, x, y);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnMouseWheel(nullptr); return; }
+    w->OnMouseWheel([cb, userdata](int delta, int x, int y) {
+        cb(userdata, delta, x, y);
+    });
 }
 
 SABLEUI_API void sabOnKeyDown(sabWindow window, sabKeyCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnKeyDown([cb, userdata](int key, int mods) {
-            if (cb) cb(userdata, key, mods);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnKeyDown(nullptr); return; }
+    w->OnKeyDown([cb, userdata](int key, int mods) {
+        cb(userdata, key, mods);
+    });
 }
 
 SABLEUI_API void sabOnKeyUp(sabWindow window, sabKeyCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnKeyUp([cb, userdata](int key, int mods) {
-            if (cb) cb(userdata, key, mods);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnKeyUp(nullptr); return; }
+    w->OnKeyUp([cb, userdata](int key, int mods) {
+        cb(userdata, key, mods);
+    });
 }
 
 SABLEUI_API void sabOnText(sabWindow window, sabTextCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnText([cb, userdata](unsigned int codepoint) {
-            if (cb) cb(userdata, codepoint);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnText(nullptr); return; }
+    w->OnText([cb, userdata](unsigned int codepoint) {
+        cb(userdata, codepoint);
+    });
 }
 
 SABLEUI_API void sabOnResize(sabWindow window, sabResizeCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnResize([cb, userdata](int width, int height) {
-            if (cb) cb(userdata, width, height);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnResize(nullptr); return; }
+    w->OnResize([cb, userdata](int width, int height) {
+        cb(userdata, width, height);
+    });
 }
 
 SABLEUI_API void sabOnClose(sabWindow window, sabCloseCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnClose([cb, userdata]() -> bool {
-            if (!cb) return true;
-            const int verdict = cb(userdata);  // C ABI: no exceptions expected
-            return verdict != 0;
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnClose(nullptr); return; }
+    w->OnClose([cb, userdata]() -> bool {
+        return cb(userdata) != 0;
+    });
 }
 
 SABLEUI_API void sabOnPaint(sabWindow window, sabSimpleCallback cb, void* userdata) {
-    if (sableui::Window* w = W(window)) {
-        w->OnPaint([cb, userdata]() {
-            if (cb) cb(userdata);
-        });
-    }
+    sableui::Window* w = W(window);
+    if (!w) return;
+    if (!cb) { w->OnPaint(nullptr); return; }
+    w->OnPaint([cb, userdata]() {
+        cb(userdata);
+    });
 }
 
 // --- Timers ---------------------------------------------------------------------
@@ -168,12 +195,19 @@ SABLEUI_API void sabOnPaint(sabWindow window, sabSimpleCallback cb, void* userda
 SABLEUI_API sabTimerId sabAddTimer(sabWindow window, int interval_ms,
                                    sabSimpleCallback cb, void* userdata) {
     sableui::Window* w = W(window);
-    if (!w) { SetError("sabAddTimer: NULL window handle"); return -1; }
+    if (!w) {
+        SetError("sabAddTimer: NULL window handle");
+        return -1;
+    }
+    if (!cb) {
+        SetError("sabAddTimer: callback is NULL");
+        return -1;
+    }
     std::string err;
     const int id = w->AddTimer(interval_ms, [cb, userdata]() {
-        if (cb) cb(userdata);
+        cb(userdata);
     }, &err);
-    if (id < 0) SetError(err.c_str());
+    if (id < 0) SetError(err.empty() ? "sabAddTimer: failed" : err.c_str());
     return id;
 }
 
@@ -227,7 +261,10 @@ SABLEUI_API void sabDrawLine(sabWindow window, float x1, float y1, float x2, flo
 SABLEUI_API void sabDrawText(sabWindow window, float x, float y, float w, float h,
                              const wchar_t* text, float font_size) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabDrawText: NULL window handle"); return; }
+    if (!win) {
+        SetError("sabDrawText: NULL window handle");
+        return;
+    }
     win->DrawTextAt(x, y, w, h, FromW(text), font_size);
 }
 
@@ -237,7 +274,10 @@ SABLEUI_API sabWidgetId sabAddButton(sabWindow window, int x, int y, int w, int 
                                      const wchar_t* text,
                                      sabClickCallback onClick, void* userdata) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddButton: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddButton: NULL window handle");
+        return -1;
+    }
     return win->AddButton(x, y, w, h, FromW(text), [onClick, userdata]() {
         if (onClick) onClick(userdata);
     });
@@ -246,7 +286,10 @@ SABLEUI_API sabWidgetId sabAddButton(sabWindow window, int x, int y, int w, int 
 SABLEUI_API sabWidgetId sabAddLabel(sabWindow window, int x, int y, int w, int h,
                                     const wchar_t* text) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddLabel: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddLabel: NULL window handle");
+        return -1;
+    }
     return win->AddLabel(x, y, w, h, FromW(text));
 }
 
@@ -254,7 +297,10 @@ SABLEUI_API sabWidgetId sabAddCheckbox(sabWindow window, int x, int y, int w, in
                                        const wchar_t* text, int checked,
                                        sabChangeCallback onChange, void* userdata) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddCheckbox: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddCheckbox: NULL window handle");
+        return -1;
+    }
     return win->AddCheckbox(x, y, w, h, FromW(text), checked != 0,
                             [onChange, userdata](bool on) {
         if (onChange) onChange(userdata, on ? 1 : 0);
@@ -266,7 +312,10 @@ SABLEUI_API sabWidgetId sabAddTextField(sabWindow window, int x, int y, int w, i
                                         sabTextChangeCallback onChange,
                                         void* userdata) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddTextField: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddTextField: NULL window handle");
+        return -1;
+    }
     return win->AddTextField(x, y, w, h, FromW(initial), masked != 0,
                              [onChange, userdata](const std::wstring& t) {
         if (onChange) onChange(userdata, t.c_str());
@@ -275,30 +324,41 @@ SABLEUI_API sabWidgetId sabAddTextField(sabWindow window, int x, int y, int w, i
 
 SABLEUI_API int sabSetLabelText(sabWindow window, sabWidgetId id, const wchar_t* text) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabSetLabelText: NULL window handle"); return 0; }
+    if (!win) {
+        SetError("sabSetLabelText: NULL window handle");
+        return 0;
+    }
     return win->SetWidgetText(id, FromW(text)) ? 1 : 0;
 }
 
 SABLEUI_API int sabGetWidgetText(sabWindow window, sabWidgetId id,
                                  wchar_t* buffer, int buffer_chars) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabGetWidgetText: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabGetWidgetText: NULL window handle");
+        return -1;
+    }
     if (!buffer || buffer_chars <= 0) {
         SetError("sabGetWidgetText: invalid buffer");
         return -1;
     }
     const std::wstring text = win->GetWidgetText(id);
-    if (static_cast<int>(text.size()) + 1 > buffer_chars) {
+    const int required = static_cast<int>(text.size()) + 1;  // incl. NUL
+    if (buffer_chars < required) {
         SetError("sabGetWidgetText: buffer too small");
-        return static_cast<int>(text.size());
+        return required;
     }
-    std::memcpy(buffer, text.c_str(), (text.size() + 1) * sizeof(wchar_t));
-    return static_cast<int>(text.size());
+    std::wmemcpy(buffer, text.c_str(), text.size() + 1);
+    SetError("no error");
+    return required;
 }
 
 SABLEUI_API int sabSetWidgetChecked(sabWindow window, sabWidgetId id, int on) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabSetWidgetChecked: NULL window handle"); return 0; }
+    if (!win) {
+        SetError("sabSetWidgetChecked: NULL window handle");
+        return 0;
+    }
     return win->SetWidgetChecked(id, on != 0) ? 1 : 0;
 }
 
@@ -308,11 +368,61 @@ SABLEUI_API int sabIsWidgetChecked(sabWindow window, sabWidgetId id) {
     return win->IsChecked(id) ? 1 : 0;
 }
 
+SABLEUI_API int sabSetWidgetEnabled(sabWindow window, sabWidgetId id, int on) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetEnabled: NULL window handle");
+        return 0;
+    }
+    return win->SetWidgetEnabled(id, on != 0) ? 1 : 0;
+}
+
+SABLEUI_API int sabSetWidgetVisible(sabWindow window, sabWidgetId id, int on) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetVisible: NULL window handle");
+        return 0;
+    }
+    return win->SetWidgetVisible(id, on != 0) ? 1 : 0;
+}
+
+SABLEUI_API int sabRemoveWidget(sabWindow window, sabWidgetId id) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabRemoveWidget: NULL window handle");
+        return 0;
+    }
+    return win->RemoveWidget(id) ? 1 : 0;
+}
+
+SABLEUI_API int sabMoveWidgetToFront(sabWindow window, sabWidgetId id) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabMoveWidgetToFront: NULL window handle");
+        return 0;
+    }
+    return win->MoveWidgetToFront(id) ? 1 : 0;
+}
+
+// --- Layout anchors --------------------------------------------------------------
+
+SABLEUI_API int sabSetWidgetAnchors(sabWindow window, sabWidgetId id, unsigned anchors) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetAnchors: NULL window handle");
+        return 0;
+    }
+    return win->SetWidgetAnchors(id, anchors) ? 1 : 0;
+}
+
 // --- Scroll areas ---------------------------------------------------------------
 
 SABLEUI_API sabWidgetId sabAddScrollArea(sabWindow window, int x, int y, int w, int h) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddScrollArea: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddScrollArea: NULL window handle");
+        return -1;
+    }
     return win->AddScrollArea(x, y, w, h);
 }
 
@@ -321,7 +431,10 @@ SABLEUI_API sabWidgetId sabAddButtonIn(sabWindow window, sabWidgetId area,
                                        const wchar_t* text,
                                        sabClickCallback onClick, void* userdata) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddButtonIn: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddButtonIn: NULL window handle");
+        return -1;
+    }
     return win->AddButtonIn(area, x, y, w, h, FromW(text), [onClick, userdata]() {
         if (onClick) onClick(userdata);
     });
@@ -331,7 +444,10 @@ SABLEUI_API sabWidgetId sabAddLabelIn(sabWindow window, sabWidgetId area,
                                       int x, int y, int w, int h,
                                       const wchar_t* text) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddLabelIn: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddLabelIn: NULL window handle");
+        return -1;
+    }
     return win->AddLabelIn(area, x, y, w, h, FromW(text));
 }
 
@@ -340,7 +456,10 @@ SABLEUI_API sabWidgetId sabAddCheckboxIn(sabWindow window, sabWidgetId area,
                                          const wchar_t* text, int checked,
                                          sabChangeCallback onChange, void* userdata) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddCheckboxIn: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddCheckboxIn: NULL window handle");
+        return -1;
+    }
     return win->AddCheckboxIn(area, x, y, w, h, FromW(text), checked != 0,
                               [onChange, userdata](bool on) {
         if (onChange) onChange(userdata, on ? 1 : 0);
@@ -353,7 +472,10 @@ SABLEUI_API sabWidgetId sabAddTextFieldIn(sabWindow window, sabWidgetId area,
                                           sabTextChangeCallback onChange,
                                           void* userdata) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabAddTextFieldIn: NULL window handle"); return -1; }
+    if (!win) {
+        SetError("sabAddTextFieldIn: NULL window handle");
+        return -1;
+    }
     return win->AddTextFieldIn(area, x, y, w, h, FromW(initial), masked != 0,
                                [onChange, userdata](const std::wstring& t) {
         if (onChange) onChange(userdata, t.c_str());
@@ -362,7 +484,10 @@ SABLEUI_API sabWidgetId sabAddTextFieldIn(sabWindow window, sabWidgetId area,
 
 SABLEUI_API int sabSetScrollOffset(sabWindow window, sabWidgetId area, int offset) {
     sableui::Window* win = W(window);
-    if (!win) { SetError("sabSetScrollOffset: NULL window handle"); return 0; }
+    if (!win) {
+        SetError("sabSetScrollOffset: NULL window handle");
+        return 0;
+    }
     return win->SetScrollOffset(area, offset) ? 1 : 0;
 }
 
@@ -374,4 +499,6 @@ SABLEUI_API int sabGetScrollOffset(sabWindow window, sabWidgetId area) {
 
 // --- Errors ---------------------------------------------------------------------
 
-SABLEUI_API const char* sabGetLastError(void) { return g_lastError; }
+SABLEUI_API const char* sabGetLastError(void) {
+    return g_lastError;
+}

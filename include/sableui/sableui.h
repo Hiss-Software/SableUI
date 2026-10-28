@@ -103,6 +103,7 @@ SABLEUI_API void sabSetMinimumSize(sabWindow window, int width, int height);
 SABLEUI_API void sabCloseWindow(sabWindow window);
 
 // Writes the current client (inner) size into width/height if non-NULL.
+// If window is NULL, writes 0 into both (when non-NULL).
 SABLEUI_API void sabGetClientSize(sabWindow window, int* width, int* height);
 
 // Forces a repaint of the whole window.
@@ -209,9 +210,10 @@ SABLEUI_API sabWidgetId sabAddTextField(sabWindow window, int x, int y, int w, i
 SABLEUI_API int sabSetLabelText(sabWindow window, sabWidgetId id, const wchar_t* text);
 
 // Copies the widget text (buttons, labels, text fields) into buffer.
-// Returns the text length in characters on success. If the buffer is too
-// small, nothing is written, the required length is returned and
-// sabGetLastError is set.
+// Returns the required length in characters, including the NUL terminator.
+// If buffer is NULL or buffer_chars is smaller than the required length,
+// nothing is written, the required length is returned and sabGetLastError
+// is set. Compare the return value against buffer_chars to detect truncation.
 SABLEUI_API int sabGetWidgetText(sabWindow window, sabWidgetId id,
                                  wchar_t* buffer, int buffer_chars);
 
@@ -221,6 +223,25 @@ SABLEUI_API int sabSetWidgetChecked(sabWindow window, sabWidgetId id, int on);
 
 // Returns 1 if the widget is a checked checkbox, 0 otherwise.
 SABLEUI_API int sabIsWidgetChecked(sabWindow window, sabWidgetId id);
+
+// --- Widget state and lifetime ---------------------------------------------------
+
+// Enables or disables a widget. A disabled widget does not receive input and
+// is rendered dimmed. Returns 1 on success, 0 on failure.
+SABLEUI_API int sabSetWidgetEnabled(sabWindow window, sabWidgetId id, int on);
+
+// Shows or hides a widget. A hidden widget is not drawn and does not take
+// part in hit-testing. Returns 1 on success, 0 on failure.
+SABLEUI_API int sabSetWidgetVisible(sabWindow window, sabWidgetId id, int on);
+
+// Removes a widget and releases it. Widget ids are renumbered: any id greater
+// than the removed one decreases by one, so previously stored ids must be
+// updated. Returns 1 on success, 0 on failure.
+SABLEUI_API int sabRemoveWidget(sabWindow window, sabWidgetId id);
+
+// Raises a widget above all others, so it wins hit tests over overlapping
+// siblings. Returns 1 on success, 0 on failure.
+SABLEUI_API int sabMoveWidgetToFront(sabWindow window, sabWidgetId id);
 
 // --- Layout anchors --------------------------------------------------------------
 
