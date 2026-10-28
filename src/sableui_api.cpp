@@ -134,9 +134,11 @@ void sabOnResize(sabWindow window, sabResizeCallback cb, void* userdata) {
     if (win) win->OnResize([cb, userdata](int w, int h) { cb(userdata, w, h); });
 }
 
-void sabOnClose(sabWindow window, sabSimpleCallback cb, void* userdata) {
-    auto* win = reinterpret_cast<sableui::Window*>(window);
-    if (win) win->OnClose([cb, userdata]() { cb(userdata); });
+void sabOnClose(sabWindow window, sabCloseCallback cb, void* userdata) {
+    sableui::Window* win = reinterpret_cast<sableui::Window*>(window);
+    if (!win) return;
+    if (!cb) { win->OnClose(nullptr); return; }
+    win->OnClose([cb, userdata]() -> bool { return cb(userdata) != 0; });
 }
 
 void sabOnPaint(sabWindow window, sabSimpleCallback cb, void* userdata) {

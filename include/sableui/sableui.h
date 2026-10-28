@@ -42,6 +42,11 @@ typedef void (SABLEUI_CALL* sabClickCallback)(void* userdata);
 // Checkbox state change callback. checked: 1 = on, 0 = off.
 typedef void (SABLEUI_CALL* sabChangeCallback)(void* userdata, int checked);
 
+// Text field edit callback. text is the new field content (NUL-terminated);
+// it stays valid only for the duration of the call.
+typedef void (SABLEUI_CALL* sabTextChangeCallback)(void* userdata,
+                                                   const wchar_t* text);
+
 // Mouse button callback. button: 0 = left, 1 = right, 2 = middle.
 typedef void (SABLEUI_CALL* sabMouseButtonCallback)(void* userdata, int button,
                                                     int x, int y);
@@ -63,7 +68,11 @@ typedef void (SABLEUI_CALL* sabTextCallback)(void* userdata, unsigned int codepo
 // Resize callback. Reports the new client (inner) size in pixels.
 typedef void (SABLEUI_CALL* sabResizeCallback)(void* userdata, int width, int height);
 
-// Callback without arguments (close, paint, timers).
+// Close request callback. Return non-zero to close the window, zero to veto
+// the close (e.g. to show a "save changes?" dialog first).
+typedef int (SABLEUI_CALL* sabCloseCallback)(void* userdata);
+
+// Callback without arguments (paint, timers).
 typedef void (SABLEUI_CALL* sabSimpleCallback)(void* userdata);
 
 // --- Window lifecycle ----------------------------------------------------------
@@ -89,7 +98,8 @@ SABLEUI_API void sabSetBorderless(sabWindow window, int on);
 // Constrains interactive resizing. Zero disables the constraint on that axis.
 SABLEUI_API void sabSetMinimumSize(sabWindow window, int width, int height);
 
-// Closes the window asynchronously (safe to call from any callback).
+// Closes the window asynchronously (safe to call from any callback). The
+// close-request hook can still veto it.
 SABLEUI_API void sabCloseWindow(sabWindow window);
 
 // Writes the current client (inner) size into width/height if non-NULL.
@@ -119,15 +129,16 @@ SABLEUI_API void sabOnMouseWheel(sabWindow window, sabWheelCallback cb, void* us
 SABLEUI_API void sabOnKeyDown(sabWindow window, sabKeyCallback cb, void* userdata);
 SABLEUI_API void sabOnKeyUp(sabWindow window, sabKeyCallback cb, void* userdata);
 
-// Called for each character typed (WM_CHAR level).
+// Called for each character typed (WM_CHAR level). Characters targeting a
+// focused text field are also consumed by the field itself.
 SABLEUI_API void sabOnText(sabWindow window, sabTextCallback cb, void* userdata);
 
 // Called after the window size changed.
 SABLEUI_API void sabOnResize(sabWindow window, sabResizeCallback cb, void* userdata);
 
-// Called when the user requested closing (title bar X, Alt+F4). The window
-// still closes afterward; this hook is informational.
-SABLEUI_API void sabOnClose(sabWindow window, sabSimpleCallback cb, void* userdata);
+// Called when the user requested closing (title bar X, Alt+F4). Return
+// non-zero to allow the close, zero to veto it and keep the window open.
+SABLEUI_API void sabOnClose(sabWindow window, sabCloseCallback cb, void* userdata);
 
 // Custom painting. The callback runs after the background is cleared and
 // before widgets are drawn. All sab* drawing functions below are valid ONLY
@@ -184,9 +195,25 @@ SABLEUI_API sabWidgetId sabAddCheckbox(sabWindow window, int x, int y, int w, in
                                        const wchar_t* text, int checked,
                                        sabChangeCallback onChange, void* userdata);
 
-// Replaces the text of an existing button or label. Returns 1 on success, 0 on
-// failure (also for checkboxes: their text is not replaceable yet).
+// Adds a single-line text field. masked: 1 renders '*' instead of characters
+// (passwords). onChange may be NULL; it fires after every text edit.
+// Returns the widget id, or -1 on failure.
+SABLEUI_API sabWidgetId sabAddTextField(sabWindow window, int x, int y, int w, int h,
+                                        const wchar_t* initial, int masked,
+                                        sabTextChangeCallback onChange,
+                                        void* userdata);
+
+// Replaces the text of an existing button, label or text field. For text
+// fields the caret and selection are clamped to the new length.
+// Returns 1 on success, 0 on failure.
 SABLEUI_API int sabSetLabelText(sabWindow window, sabWidgetId id, const wchar_t* text);
+
+// Copies the widget text (buttons, labels, text fields) into buffer.
+// Returns the text length in characters on success. If the buffer is too
+// small, nothing is written, the required length is returned and
+// sabGetLastError is set.
+SABLEUI_API int sabGetWidgetText(sabWindow window, sabWidgetId id,
+                                 wchar_t* buffer, int buffer_chars);
 
 // Sets checkbox state programmatically. Fires onChange if the state changed.
 // Returns 1 on success, 0 on failure.
@@ -194,6 +221,37 @@ SABLEUI_API int sabSetWidgetChecked(sabWindow window, sabWidgetId id, int on);
 
 // Returns 1 if the widget is a checked checkbox, 0 otherwise.
 SABLEUI_API int sabIsWidgetChecked(sabWindow window, sabWidgetId id);
+
+// --- Scroll areas ----------------------------------------------------------------
+
+// Adds a vertical scroll area. Widgets added with the sabAdd*In functions
+// below live inside it and use coordinates relative to the area's top-left
+// corner; content taller than the area scrolls. Returns the widget id, or
+// -1 on failure.
+SABLEUI_API sabWidgetId sabAddScrollArea(sabWindow window, int x, int y, int w, int h);
+
+SABLEUI_API sabWidgetId sabAddButtonIn(sabWindow window, sabWidgetId area,
+                                       int x, int y, int w, int h,
+                                       const wchar_t* text,
+                                       sabClickCallback onClick, void* userdata);
+SABLEUI_API sabWidgetId sabAddLabelIn(sabWindow window, sabWidgetId area,
+                                      int x, int y, int w, int h,
+                                      const wchar_t* text);
+SABLEUI_API sabWidgetId sabAddCheckboxIn(sabWindow window, sabWidgetId area,
+                                         int x, int y, int w, int h,
+                                         const wchar_t* text, int checked,
+                                         sabChangeCallback onChange, void* userdata);
+SABLEUI_API sabWidgetId sabAddTextFieldIn(sabWindow window, sabWidgetId area,
+                                          int x, int y, int w, int h,
+                                          const wchar_t* initial, int masked,
+                                          sabTextChangeCallback onChange,
+                                          void* userdata);
+
+// Programmatic scroll control. offset is in DIPs from the top of the
+// content; it is clamped to the valid range. sabGetScrollOffset returns the
+// current offset, or -1 on failure.
+SABLEUI_API int sabSetScrollOffset(sabWindow window, sabWidgetId area, int offset);
+SABLEUI_API int sabGetScrollOffset(sabWindow window, sabWidgetId area);
 
 // --- Errors ---------------------------------------------------------------------
 
