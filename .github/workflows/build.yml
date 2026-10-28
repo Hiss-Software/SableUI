@@ -9,46 +9,20 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - toolchain: msvc
-            build_dir: build-msvc
-          - toolchain: mingw
-            build_dir: build-mingw
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Configure (MSVC)
-        if: matrix.toolchain == 'msvc'
-        run: cmake -S . -B ${{ matrix.build_dir }} -A x64
+      - name: Configure
+        run: cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build (MSVC)
-        if: matrix.toolchain == 'msvc'
-        run: cmake --build ${{ matrix.build_dir }} --config Release
+      - name: Build
+        run: cmake --build build
 
-      - name: Configure (MinGW)
-        if: matrix.toolchain == 'mingw'
-        run: cmake -S . -B ${{ matrix.build_dir }} -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build (MinGW)
-        if: matrix.toolchain == 'mingw'
-        run: cmake --build ${{ matrix.build_dir }}
-
-      - name: Upload DLL (MSVC)
-        if: matrix.toolchain == 'msvc'
-        uses: actions/upload-artifact@v4
-        with:
-          name: sableui-msvc
-          path: ${{ matrix.build_dir }}/Release/sableui.dll
-
-      - name: Upload DLL (MinGW)
-        if: matrix.toolchain == 'mingw'
+      - name: Upload DLL
         uses: actions/upload-artifact@v4
         with:
           name: sableui-mingw
-          path: ${{ matrix.build_dir }}/libsableui.dll
+          path: build/libsableui.dll

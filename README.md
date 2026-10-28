@@ -38,6 +38,11 @@ examples/           runnable C examples
 
 ## Requirements
 
+> **Note:** MSVC is not officially supported at the moment. The `CMakeLists.txt`
+> contains an MSVC branch, but `IID_IDWriteFactory` resolution under MSVC
+> (`dwrite.h` declares it as `EXTERN_C const IID`, which `<initguid.h>` does
+> not generate) is still unresolved. Use **MinGW-w64** for a working build.
+
 - Windows 10 or later
 - CMake >= 3.20
 - Ninja
@@ -56,6 +61,11 @@ cmake --build build
 ```
 
 ### MSVC 2022
+
+> **Note:** MSVC is not officially supported at the moment. The `CMakeLists.txt`
+> contains an MSVC branch, but `IID_IDWriteFactory` resolution under MSVC
+> (`dwrite.h` declares it as `EXTERN_C const IID`, which `<initguid.h>` does
+> not generate) is still unresolved. Use **MinGW-w64** for a working build.
 
 From a Developer Command Prompt (so that `cl.exe` is on `PATH`):
 
