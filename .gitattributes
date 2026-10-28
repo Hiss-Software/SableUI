@@ -1,14 +1,11 @@
-* text=auto
-*.c text
-*.h text
-*.hpp text
-*.cpp text
-*.txt text
-*.md text
-CMakeLists.txt text
-*.gitattributes text
-*.gitignore text
-*.bat text eol=crlf
-*.sh text eol=lf
-*.png binary
-*.ico binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.wav binary
+*.mp3 binary
+*.exe binary
+*.dll binary
+*.lib binary
+*.a binary
+*.pdb binary

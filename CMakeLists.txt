@@ -23,7 +23,7 @@ target_include_directories(sableui
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>)
 target_compile_definitions(sableui PRIVATE SABLEUI_BUILDING)
-target_link_libraries(sableui PRIVATE d2d1 dwrite user32 gdi32)
+target_link_libraries(sableui PRIVATE d2d1 dwrite dwmapi user32 gdi32)
 set_target_properties(sableui PROPERTIES OUTPUT_NAME "sableui")
 
 if(NOT MSVC)
