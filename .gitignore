@@ -26,3 +26,6 @@ install_manifest.txt
 .vs/
 .vscode/
 .idea/
+
+build.ninja
+*.ninja
