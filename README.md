@@ -33,6 +33,7 @@ yourself.
 include/sableui/    public C API (the only consumer-facing contract)
 src/                internal core: renderer, widgets, window, message loop
 cmake/              version derivation helpers
+examples/           runnable C examples
 ```
 
 ## Requirements
@@ -40,20 +41,39 @@ cmake/              version derivation helpers
 - Windows 10 or later
 - CMake >= 3.20
 - Ninja
-- A C++20 compiler: MinGW-w64 (GCC 12+) or MSVC 2022
+- A C++20 compiler: MinGW-w64 (GCC 12+) or MSVC 2022 (19.30+)
 - Direct2D, DirectWrite, DWM (shipped with Windows)
 
 Link with `d2d1`, `dwrite`, `dwmapi`, `ole32`, `user32`, `gdi32`.
 
 ## Building
 
+### MinGW-w64
+
 ```sh
 cmake -S . -B build -G Ninja
 cmake --build build
 ```
 
-The result is `libsableui.dll` plus an import library. The library version
-is derived from the latest git tag (`cmake/gen_version.cmake`).
+### MSVC 2022
+
+From a Developer Command Prompt (so that `cl.exe` is on `PATH`):
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+Or with the Visual Studio generator:
+
+```powershell
+cmake -S . -B build-msvc -G "Visual Studio 17 2022" -A x64
+cmake --build build-msvc --config Release
+```
+
+The result is `libsableui.dll` and `libsableui.dll.a` (MinGW), or
+`sableui.dll` and `sableui.lib` (MSVC). The library version is derived from
+the latest git tag (`cmake/gen_version.cmake`).
 
 ## C usage
 
@@ -86,7 +106,13 @@ Compile with MinGW:
 gcc main.c -Iinclude -L. -lsableui -o app.exe
 ```
 
-Keep `libsableui.dll` next to `app.exe` (or on `PATH`).
+Compile with MSVC:
+
+```bat
+cl main.c /I include sableui.lib
+```
+
+Keep `libsableui.dll` (or `sableui.dll`) next to `app.exe` (or on `PATH`).
 
 ## Text fields and scroll areas
 
