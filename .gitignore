@@ -1,0 +1,28 @@
+# Build artifacts
+build/
+out/
+cmake-build-*/
+
+# Object files, libs, binaries
+*.obj
+*.o
+*.pdb
+*.ilk
+*.lib
+*.dll
+*.exe
+*.exp
+*.a
+
+# CMake / Ninja
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+.ninja_log
+.ninja_deps
+install_manifest.txt
+
+# Editors
+.vs/
+.vscode/
+.idea/
