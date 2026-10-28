@@ -2,9 +2,9 @@
 
 SableUI is a small, dependency-free GUI library for Windows, built on
 Direct2D and DirectWrite and exposed through a stable C ABI. It ships a
-familiar widget set (buttons, labels, checkboxes, single-line text fields,
-vertical scroll areas) and stays out of the way when you want to paint
-yourself.
+familiar widget set (buttons, labels, checkboxes, text fields, sliders,
+progress bars, vertical scroll areas) and stays out of the way when you
+want to paint yourself.
 
 - **Small public surface**: one header (`include/sableui/sableui.h`), opaque
   handles, plain return codes instead of exceptions.
@@ -17,11 +17,16 @@ yourself.
   activate widgets, a focus ring is drawn, double-click and wheel events
   are exposed. Text fields support caret placement, selection,
   Ctrl+A/C/X/V and word-wise navigation.
+- **IME composition**: Chinese, Japanese and Korean input is supported
+  through `WM_IME_*` and `imm32`; the composition window follows the
+  focused text field.
 - **Custom drawing**: a paint-time hook with fills, strokes, ellipses,
   lines, text and clip rects — on top of or instead of the built-in
   widgets.
 - **Layout anchors**: pin a widget's edges to the client area so it keeps
   its margins (or stretches) across resizes.
+- **Per-widget styling**: font family and size, background colour and
+  corner radius can be overridden on any widget.
 - **Modular core**: widgets talk to an abstract `Renderer`, so additional
   backends (Direct3D, software) can be added without touching widget code.
 - **ABI-safe error model**: nothing crosses the C boundary with exceptions;
@@ -38,18 +43,19 @@ examples/           runnable C examples
 
 ## Requirements
 
-> **Note:** MSVC is not officially supported at the moment. The `CMakeLists.txt`
-> contains an MSVC branch, but `IID_IDWriteFactory` resolution under MSVC
-> (`dwrite.h` declares it as `EXTERN_C const IID`, which `<initguid.h>` does
-> not generate) is still unresolved. Use **MinGW-w64** for a working build.
+> **Note:** MSVC is not officially supported at the moment. The
+> `CMakeLists.txt` contains an MSVC branch, but `IID_IDWriteFactory`
+> resolution under MSVC (`dwrite.h` declares it as `EXTERN_C const IID`,
+> which `<initguid.h>` does not generate) is still unresolved. Use
+> **MinGW-w64** for a working build.
 
 - Windows 10 or later
 - CMake >= 3.20
 - Ninja
 - A C++20 compiler: MinGW-w64 (GCC 12+) or MSVC 2022 (19.30+)
-- Direct2D, DirectWrite, DWM (shipped with Windows)
+- Direct2D, DirectWrite, DWM, IMM (shipped with Windows)
 
-Link with `d2d1`, `dwrite`, `dwmapi`, `ole32`, `user32`, `gdi32`.
+Link with `d2d1`, `dwrite`, `dwmapi`, `ole32`, `user32`, `gdi32`, `imm32`.
 
 ## Building
 
@@ -62,10 +68,8 @@ cmake --build build
 
 ### MSVC 2022
 
-> **Note:** MSVC is not officially supported at the moment. The `CMakeLists.txt`
-> contains an MSVC branch, but `IID_IDWriteFactory` resolution under MSVC
-> (`dwrite.h` declares it as `EXTERN_C const IID`, which `<initguid.h>` does
-> not generate) is still unresolved. Use **MinGW-w64** for a working build.
+> **Note:** MSVC is not officially supported at the moment. See the note
+> in Requirements.
 
 From a Developer Command Prompt (so that `cl.exe` is on `PATH`):
 
@@ -96,6 +100,11 @@ static void on_click(void* ud) {
     puts("clicked");
 }
 
+static void on_slide(void* ud, float v) {
+    (void)ud;
+    printf("slider: %.1f\n", v);
+}
+
 int main(void) {
     sabWindow w = sabCreateWindow(L"Hello", 480, 320);
     if (!w) {
@@ -104,6 +113,8 @@ int main(void) {
     }
     sabAddLabel(w, 24, 24, 432, 24, L"Hello, SableUI!");
     sabAddButton(w, 150, 60, 180, 44, L"Say hi", on_click, NULL);
+    sabAddSlider(w, 24, 120, 432, 32, 0.0f, 100.0f, 50.0f, on_slide, NULL);
+    sabAddProgressBar(w, 24, 168, 432, 16, 50.0f);
     sabRun(w);
     sabDestroyWindow(w);
     return 0;
@@ -138,6 +149,36 @@ Widgets added with the `sabAdd*In` family live inside a scroll area and use
 coordinates relative to its top-left corner. Content taller than the area
 scrolls with the wheel or by dragging the thumb.
 
+## Sliders and progress bars
+
+```c
+static void on_value(void* ud, float v) {
+    (void)ud; (void)v;
+}
+
+sabWidgetId slider = sabAddSlider(w, 16, 16, 300, 32,
+                                  0.0f, 100.0f, 42.0f, on_value, NULL);
+sabWidgetId bar    = sabAddProgressBar(w, 16, 64, 300, 16, 42.0f);
+
+sabSetWidgetValue(w, slider, 75.0f);
+sabSetWidgetValue(w, bar,    75.0f);
+```
+
+`sabSetWidgetValue` clamps to the widget's range. `sabAddProgressBar` uses
+`[0, 100]` by default.
+
+## Styling a widget
+
+```c
+sabSetWidgetFont(w, id, L"Consolas", 16.0f);
+sabSetWidgetBackground(w, id, 0.20f, 0.25f, 0.35f, 1.0f);
+sabSetWidgetRadius(w, id, 12.0f);
+```
+
+`family == NULL` keeps the current font, `size <= 0` keeps the current
+size, a negative radius reverts to the palette default, and a fully
+transparent background reverts to the palette colour.
+
 ## Layout anchors
 
 ```c
@@ -157,10 +198,9 @@ callbacks and timers run on that thread inside `sabRun()`.
 
 ## Limitations
 
-- No IME composition (Chinese/Japanese/Korean input). `WM_CHAR` covers
-  Latin and Cyrillic keyboard layouts.
 - No undo/redo in text fields.
-- Text fields are single-line.
+- Text fields are single-line by default (multi-line is supported at the
+  internal layer but not yet exposed through the C API).
 - Scroll areas are vertical only.
 
 ## License

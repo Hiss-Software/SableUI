@@ -47,7 +47,7 @@ target_compile_definitions(sableui PRIVATE SABLEUI_BUILDING)
 target_compile_definitions(sableui PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 
 # Common Windows libraries.
-target_link_libraries(sableui PRIVATE d2d1 dwrite dwmapi ole32 user32 gdi32)
+target_link_libraries(sableui PRIVATE d2d1 dwrite dwmapi ole32 user32 gdi32 imm32)
 
 set_target_properties(sableui PROPERTIES OUTPUT_NAME "sableui")
 

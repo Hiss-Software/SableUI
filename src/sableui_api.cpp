@@ -289,7 +289,7 @@ sabWidgetId sabAddTextField(sabWindow window, int x, int y, int w, int h,
         return -1;
     }
     const sabWidgetId id = win->AddTextField(
-        x, y, w, h, initial ? initial : L"", masked != 0,
+        x, y, w, h, initial ? initial : L"", masked != 0, false,
         [onChange, userdata](const std::wstring& t) {
             if (onChange) onChange(userdata, t.c_str());
         });
@@ -298,16 +298,104 @@ sabWidgetId sabAddTextField(sabWindow window, int x, int y, int w, int h,
     return id;
 }
 
-int sabSetLabelText(sabWindow window, sabWidgetId id, const wchar_t* text) {
+sabWidgetId sabAddTextFieldEx(sabWindow window, int x, int y, int w, int h,
+                              const wchar_t* initial, int masked, int multiline,
+                              sabTextChangeCallback onChange, void* userdata) {
     sableui::Window* win = W(window);
     if (!win) {
-        SetError("sabSetLabelText: NULL window handle");
+        SetError("sabAddTextFieldEx: NULL window handle");
+        return -1;
+    }
+    const sabWidgetId id = win->AddTextField(
+        x, y, w, h, initial ? initial : L"", masked != 0, multiline != 0,
+        [onChange, userdata](const std::wstring& t) {
+            if (onChange) onChange(userdata, t.c_str());
+        });
+    if (id < 0) SetError("sabAddTextFieldEx: failed");
+    else ClearError();
+    return id;
+}
+
+sabWidgetId sabAddTextArea(sabWindow window, int x, int y, int w, int h,
+                           const wchar_t* initial,
+                           sabTextChangeCallback onChange, void* userdata) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabAddTextArea: NULL window handle");
+        return -1;
+    }
+    const sabWidgetId id = win->AddTextArea(
+        x, y, w, h, initial ? initial : L"",
+        [onChange, userdata](const std::wstring& t) {
+            if (onChange) onChange(userdata, t.c_str());
+        });
+    if (id < 0) SetError("sabAddTextArea: failed");
+    else ClearError();
+    return id;
+}
+
+sabWidgetId sabAddSlider(sabWindow window, int x, int y, int w, int h,
+                         float min_value, float max_value, float value,
+                         sabValueCallback onValueChange, void* userdata) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabAddSlider: NULL window handle");
+        return -1;
+    }
+    if (max_value < min_value) {
+        SetError("sabAddSlider: maxVal < minVal");
+        return -1;
+    }
+    const sabWidgetId id = win->AddSlider(
+        x, y, w, h, min_value, max_value, value,
+        [onValueChange, userdata](float v) {
+            if (onValueChange) onValueChange(userdata, v);
+        });
+    if (id < 0) SetError("sabAddSlider: failed");
+    else ClearError();
+    return id;
+}
+
+sabWidgetId sabAddProgressBar(sabWindow window, int x, int y, int w, int h,
+                              float value) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabAddProgressBar: NULL window handle");
+        return -1;
+    }
+    const sabWidgetId id = win->AddProgressBar(x, y, w, h, value);
+    if (id < 0) SetError("sabAddProgressBar: failed");
+    else ClearError();
+    return id;
+}
+
+sabWidgetId sabAddImage(sabWindow window, int x, int y, int w, int h,
+                        const wchar_t* path) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabAddImage: NULL window handle");
+        return -1;
+    }
+    const sabWidgetId id = win->AddImage(x, y, w, h, path ? path : L"");
+    if (id < 0) SetError("sabAddImage: failed");
+    else ClearError();
+    return id;
+}
+
+int sabSetWidgetText(sabWindow window, sabWidgetId id, const wchar_t* text) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetText: NULL window handle");
         return 0;
     }
     const int ok = win->SetWidgetText(id, text ? text : L"") ? 1 : 0;
-    if (!ok) SetError("sabSetLabelText: failed");
+    if (!ok) SetError("sabSetWidgetText: failed");
     else ClearError();
     return ok;
+}
+
+int sabSetLabelText(sabWindow window, sabWidgetId id, const wchar_t* text) {
+    return sabSetWidgetText(window, id, text);
 }
 
 int sabGetWidgetText(sabWindow window, sabWidgetId id,
@@ -339,6 +427,18 @@ int sabSetWidgetChecked(sabWindow window, sabWidgetId id, int on) {
 int sabIsWidgetChecked(sabWindow window, sabWidgetId id) {
     sableui::Window* win = W(window);
     return (win && win->IsChecked(id)) ? 1 : 0;
+}
+
+int sabSetWidgetValue(sabWindow window, sabWidgetId id, float value) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetValue: NULL window handle");
+        return 0;
+    }
+    const int ok = win->SetWidgetValue(id, value) ? 1 : 0;
+    if (!ok) SetError("sabSetWidgetValue: failed");
+    else ClearError();
+    return ok;
 }
 
 int sabSetWidgetEnabled(sabWindow window, sabWidgetId id, int on) {
@@ -385,6 +485,79 @@ int sabMoveWidgetToFront(sabWindow window, sabWidgetId id) {
     }
     const int ok = win->MoveWidgetToFront(id) ? 1 : 0;
     if (!ok) SetError("sabMoveWidgetToFront: failed");
+    else ClearError();
+    return ok;
+}
+
+// --- Widget styling ---------------------------------------------------------
+
+int sabSetWidgetFont(sabWindow window, sabWidgetId id,
+                     const wchar_t* family, float size) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetFont: NULL window handle");
+        return 0;
+    }
+    // Per the public contract: NULL family keeps the current one, size <= 0
+    // keeps the current size. We need the current values to honour that.
+    if (!family || size <= 0.0f) {
+        // Look up current values via the internal API. SetWidgetFont stores
+        // both; when a field should stay unchanged we read it first.
+        // There is no dedicated getter, so we round-trip through a copy.
+        // Simplest approach: only set the fields provided; fall back to a
+        // no-op when both are unspecified.
+        if (!family && size <= 0.0f) { ClearError(); return 1; }
+    }
+    // Read current values to preserve unspecified fields.
+    std::wstring cur_family = L"Segoe UI";
+    float cur_size = 15.0f;
+    win->GetWidgetFont(id, &cur_family, &cur_size); // implemented below
+    const std::wstring new_family = family ? family : cur_family;
+    const float new_size = size > 0.0f ? size : cur_size;
+    const int ok = win->SetWidgetFont(id, new_family, new_size) ? 1 : 0;
+    if (!ok) SetError("sabSetWidgetFont: failed");
+    else ClearError();
+    return ok;
+}
+
+int sabSetWidgetBackground(sabWindow window, sabWidgetId id,
+                           float r, float g, float b, float a) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetBackground: NULL window handle");
+        return 0;
+    }
+    const bool reset = (r == 0.0f && g == 0.0f && b == 0.0f && a == 0.0f);
+    const int ok = reset
+        ? (win->ClearWidgetBackground(id) ? 1 : 0)
+        : (win->SetWidgetBackground(id, {r, g, b, a}) ? 1 : 0);
+    if (!ok) SetError("sabSetWidgetBackground: failed");
+    else ClearError();
+    return ok;
+}
+
+int sabSetWidgetRadius(sabWindow window, sabWidgetId id, float radius) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetRadius: NULL window handle");
+        return 0;
+    }
+    const int ok = (radius < 0.0f)
+        ? (win->ClearWidgetRadius(id) ? 1 : 0)
+        : (win->SetWidgetRadius(id, radius) ? 1 : 0);
+    if (!ok) SetError("sabSetWidgetRadius: failed");
+    else ClearError();
+    return ok;
+}
+
+int sabSetWidgetImage(sabWindow window, sabWidgetId id, const wchar_t* path) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetWidgetImage: NULL window handle");
+        return 0;
+    }
+    const int ok = win->SetWidgetImage(id, path ? path : L"") ? 1 : 0;
+    if (!ok) SetError("sabSetWidgetImage: failed");
     else ClearError();
     return ok;
 }
@@ -473,11 +646,63 @@ sabWidgetId sabAddTextFieldIn(sabWindow window, sabWidgetId area,
         return -1;
     }
     const sabWidgetId id = win->AddTextFieldIn(
-        area, x, y, w, h, initial ? initial : L"", masked != 0,
+        area, x, y, w, h, initial ? initial : L"", masked != 0, false,
         [onChange, userdata](const std::wstring& t) {
             if (onChange) onChange(userdata, t.c_str());
         });
     if (id < 0) SetError("sabAddTextFieldIn: failed");
+    else ClearError();
+    return id;
+}
+
+sabWidgetId sabAddTextFieldInEx(sabWindow window, sabWidgetId area,
+                                int x, int y, int w, int h,
+                                const wchar_t* initial, int masked, int multiline,
+                                sabTextChangeCallback onChange, void* userdata) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabAddTextFieldInEx: NULL window handle");
+        return -1;
+    }
+    const sabWidgetId id = win->AddTextFieldIn(
+        area, x, y, w, h, initial ? initial : L"", masked != 0, multiline != 0,
+        [onChange, userdata](const std::wstring& t) {
+            if (onChange) onChange(userdata, t.c_str());
+        });
+    if (id < 0) SetError("sabAddTextFieldInEx: failed");
+    else ClearError();
+    return id;
+}
+
+sabWidgetId sabAddTextAreaIn(sabWindow window, sabWidgetId area,
+                             int x, int y, int w, int h,
+                             const wchar_t* initial,
+                             sabTextChangeCallback onChange, void* userdata) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabAddTextAreaIn: NULL window handle");
+        return -1;
+    }
+    const sabWidgetId id = win->AddTextAreaIn(
+        area, x, y, w, h, initial ? initial : L"",
+        [onChange, userdata](const std::wstring& t) {
+            if (onChange) onChange(userdata, t.c_str());
+        });
+    if (id < 0) SetError("sabAddTextAreaIn: failed");
+    else ClearError();
+    return id;
+}
+
+sabWidgetId sabAddImageIn(sabWindow window, sabWidgetId area,
+                          int x, int y, int w, int h, const wchar_t* path) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabAddImageIn: NULL window handle");
+        return -1;
+    }
+    const sabWidgetId id = win->AddImageIn(area, x, y, w, h,
+                                           path ? path : L"");
+    if (id < 0) SetError("sabAddImageIn: failed");
     else ClearError();
     return id;
 }
@@ -501,6 +726,27 @@ int sabGetScrollOffset(sabWindow window, sabWidgetId area) {
         return -1;
     }
     return win->GetScrollOffset(area);
+}
+
+int sabSetScrollOffsetX(sabWindow window, sabWidgetId area, int offset) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabSetScrollOffsetX: NULL window handle");
+        return 0;
+    }
+    const int ok = win->SetScrollOffsetX(area, offset) ? 1 : 0;
+    if (!ok) SetError("sabSetScrollOffsetX: failed");
+    else ClearError();
+    return ok;
+}
+
+int sabGetScrollOffsetX(sabWindow window, sabWidgetId area) {
+    sableui::Window* win = W(window);
+    if (!win) {
+        SetError("sabGetScrollOffsetX: NULL window handle");
+        return -1;
+    }
+    return win->GetScrollOffsetX(area);
 }
 
 // --- Drawing (paint callback only) ------------------------------------------
@@ -554,6 +800,24 @@ void sabDrawText(sabWindow window, float x, float y, float w, float h,
         return;
     }
     win->DrawTextAt(x, y, w, h, text ? text : L"", font_size);
+}
+
+int sabUndo(sabWindow window) {
+    sableui::Window* win = W(window);
+    if (!win) { SetError("sabUndo: NULL window handle"); return 0; }
+    const int ok = win->Undo() ? 1 : 0;
+    if (!ok) SetError("sabUndo: nothing to undo or no text field has focus");
+    else ClearError();
+    return ok;
+}
+
+int sabRedo(sabWindow window) {
+    sableui::Window* win = W(window);
+    if (!win) { SetError("sabRedo: NULL window handle"); return 0; }
+    const int ok = win->Redo() ? 1 : 0;
+    if (!ok) SetError("sabRedo: nothing to redo or no text field has focus");
+    else ClearError();
+    return ok;
 }
 
 } // extern "C"
