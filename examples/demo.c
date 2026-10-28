@@ -38,8 +38,8 @@ static void on_greet(void* ud) {
     wchar_t name[128] = {0};
     if (g_name >= 0) sabGetWidgetText(g_win, g_name, name, 128);
     wchar_t status[256];
-    if (name[0]) swprintf(status, 256, L"Привет, %ls!", name);
-    else         wcscpy(status, L"Введите имя, пожалуйста.");
+    if (name[0]) swprintf(status, 256, L"Hello, %ls!", name);
+    else         wcscpy(status, L"Please enter a name.");
     if (g_status >= 0) sabSetLabelText(g_win, g_status, status);
 }
 
@@ -48,7 +48,7 @@ static void on_name_changed(void* ud, const wchar_t* text) { (void)ud; (void)tex
 static void on_agree(void* ud, int checked) {
     (void)ud;
     wchar_t buf[128];
-    swprintf(buf, 128, L"Согласие: %ls", checked ? L"да" : L"нет");
+    swprintf(buf, 128, L"Agreed: %ls", checked ? L"yes" : L"no");
     if (g_status >= 0) sabSetLabelText(g_win, g_status, buf);
 }
 
@@ -59,7 +59,7 @@ static void on_tick(void* ud) {
     if (g_phase > 6.28318f) g_phase -= 6.28318f;
     if (g_counter % 2 == 0 && g_status >= 0) {
         wchar_t buf[64];
-        swprintf(buf, 64, L"Тиков: %d", g_counter);
+        swprintf(buf, 64, L"Ticks: %d", g_counter);
         sabSetLabelText(g_win, g_status, buf);
     }
     sabInvalidate(g_win);  // repaint for the animated dot
@@ -155,7 +155,7 @@ static void paint_custom_button(void) {
     sabDrawText(g_win,
                 (float)g_custom_btn_x, (float)g_custom_btn_y,
                 (float)g_custom_btn_w, (float)g_custom_btn_h,
-                L"Кастомная кнопка", 15.0f);
+                L"Custom button", 15.0f);
 }
 
 static void on_paint(void* ud) {
@@ -189,28 +189,27 @@ int main(void) {
 
     // Header occupies 0..56; widgets start below.
     sabAddLabel(g_win, 16, 72, 528, 24,
-                L"Введите имя и нажмите «Поздороваться».");
+                L"Enter a name and click \"Greet\".");
 
     g_name = sabAddTextField(g_win, 16, 104, 340, 32, L"", 0,
                              on_name_changed, NULL);
 
-    sabAddButton(g_win, 368, 104, 176, 32, L"Поздороваться",
+    sabAddButton(g_win, 368, 104, 176, 32, L"Greet",
                  on_greet, NULL);
 
-    sabAddCheckbox(g_win, 16, 152, 300, 24, L"Я согласен",
+    sabAddCheckbox(g_win, 16, 152, 300, 24, L"I agree",
                    0, on_agree, NULL);
 
-    g_status = sabAddLabel(g_win, 16, 184, 528, 24, L"Готово.");
+    g_status = sabAddLabel(g_win, 16, 184, 528, 24, L"Ready.");
 
     // Custom-painted button: position is tracked manually for hover.
     g_custom_btn_x = 16;
     g_custom_btn_y = 220;
     g_custom_btn_w = 220;
     g_custom_btn_h = 36;
-    // An invisible real button on top? No: we hit-test manually below.
 
     // Scroll area with a list of labels and a button inside.
-    sabAddLabel(g_win, 16, 272, 528, 24, L"Список (прокручивается):");
+    sabAddLabel(g_win, 16, 272, 528, 24, L"List (scrollable):");
     sabWidgetId area = sabAddScrollArea(g_win, 16, 300, 528, 220);
     if (area < 0) {
         printf("sabAddScrollArea failed: %s\n", sabGetLastError());
@@ -219,11 +218,11 @@ int main(void) {
     }
     for (int i = 0; i < 24; ++i) {
         wchar_t line[64];
-        swprintf(line, 64, L"Элемент #%d", i + 1);
+        swprintf(line, 64, L"Item #%d", i + 1);
         sabAddLabelIn(g_win, area, 12, i * 28, 480, 24, line);
     }
     sabAddButtonIn(g_win, area, 12, 24 * 28, 220, 32,
-                   L"Кнопка в скролле", on_greet, NULL);
+                   L"Button in scroll", on_greet, NULL);
 
     sabAddTimer(g_win, 1000, on_tick, NULL);
     sabAddTimer(g_win, 33, on_tick, NULL);   // ~30 fps for the dot animation
