@@ -12,36 +12,43 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [ msvc, mingw ]
+        include:
+          - toolchain: msvc
+            build_dir: build-msvc
+          - toolchain: mingw
+            build_dir: build-mingw
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Configure (MSVC)
         if: matrix.toolchain == 'msvc'
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B ${{ matrix.build_dir }} -A x64
 
       - name: Build (MSVC)
         if: matrix.toolchain == 'msvc'
-        run: cmake --build build --config Release
+        run: cmake --build ${{ matrix.build_dir }} --config Release
 
       - name: Configure (MinGW)
         if: matrix.toolchain == 'mingw'
-        run: cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B ${{ matrix.build_dir }} -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build (MinGW)
         if: matrix.toolchain == 'mingw'
-        run: cmake --build build
+        run: cmake --build ${{ matrix.build_dir }}
 
       - name: Upload DLL (MSVC)
         if: matrix.toolchain == 'msvc'
         uses: actions/upload-artifact@v4
         with:
           name: sableui-msvc
-          path: build/Release/sableui.dll
+          path: ${{ matrix.build_dir }}/Release/sableui.dll
 
       - name: Upload DLL (MinGW)
         if: matrix.toolchain == 'mingw'
         uses: actions/upload-artifact@v4
         with:
           name: sableui-mingw
-          path: build/libsableui.dll
+          path: ${{ matrix.build_dir }}/libsableui.dll
