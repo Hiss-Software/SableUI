@@ -2,9 +2,9 @@
 
 SableUI is a small, dependency-free GUI library for Windows, built on
 Direct2D and DirectWrite and exposed through a stable C ABI. It ships a
-familiar widget set (buttons, labels, checkboxes, text fields, sliders,
-progress bars, vertical scroll areas) and stays out of the way when you
-want to paint yourself.
+familiar widget set (buttons, labels, checkboxes, text fields, text areas,
+sliders, progress bars, images, scroll areas) and stays out of the way when
+you want to paint yourself.
 
 - **Small public surface**: one header (`include/sableui/sableui.h`), opaque
   handles, plain return codes instead of exceptions.
@@ -20,6 +20,10 @@ want to paint yourself.
 - **IME composition**: Chinese, Japanese and Korean input is supported
   through `WM_IME_*` and `imm32`; the composition window follows the
   focused text field.
+- **Images**: PNG, JPEG, BMP and GIF are decoded through WIC and cached
+  by path.
+- **Undo/redo**: text fields keep a bounded undo history (200 snapshots),
+  driven by Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y.
 - **Custom drawing**: a paint-time hook with fills, strokes, ellipses,
   lines, text and clip rects — on top of or instead of the built-in
   widgets.
@@ -53,9 +57,10 @@ examples/           runnable C examples
 - CMake >= 3.20
 - Ninja
 - A C++20 compiler: MinGW-w64 (GCC 12+) or MSVC 2022 (19.30+)
-- Direct2D, DirectWrite, DWM, IMM (shipped with Windows)
+- Direct2D, DirectWrite, DWM, IMM, WIC (shipped with Windows)
 
-Link with `d2d1`, `dwrite`, `dwmapi`, `ole32`, `user32`, `gdi32`, `imm32`.
+Link with `d2d1`, `dwrite`, `dwmapi`, `ole32`, `user32`, `gdi32`, `imm32`,
+`windowscodecs`.
 
 ## Building
 
@@ -146,8 +151,18 @@ for (int i = 0; i < 20; ++i)
 ```
 
 Widgets added with the `sabAdd*In` family live inside a scroll area and use
-coordinates relative to its top-left corner. Content taller than the area
-scrolls with the wheel or by dragging the thumb.
+coordinates relative to its top-left corner. Content taller or wider than
+the area scrolls with the wheel (`WM_MOUSEWHEEL` vertically,
+`WM_MOUSEHWHEEL` horizontally) or by dragging the thumb.
+
+## Text areas
+
+```c
+sabWidgetId body = sabAddTextArea(w, 16, 16, 448, 200, L"", NULL, NULL);
+```
+
+`sabAddTextArea` is a multiline variant of `sabAddTextField`. Enter inserts
+a newline and word wrapping is enabled.
 
 ## Sliders and progress bars
 
@@ -166,6 +181,21 @@ sabSetWidgetValue(w, bar,    75.0f);
 
 `sabSetWidgetValue` clamps to the widget's range. `sabAddProgressBar` uses
 `[0, 100]` by default.
+
+## Images
+
+```c
+sabWidgetId img = sabAddImage(w, 16, 16, 256, 256, L"logo.png");
+sabSetWidgetImage(w, img, L"other.png");  // swap later
+```
+
+`sabAddImage` accepts PNG, JPEG, BMP and GIF through WIC. The decoded
+bitmap is cached by path; changing the path decodes a new one.
+
+## Undo and redo
+
+Text fields keep a bounded undo history (200 snapshots). The user can
+press Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y while the field has focus.
 
 ## Styling a widget
 
@@ -195,13 +225,6 @@ stretches the widget. Anchors are captured once and re-applied on
 SableUI is single-threaded and expects to own its window and message loop.
 All API calls must be made from the thread that created the window. Event
 callbacks and timers run on that thread inside `sabRun()`.
-
-## Limitations
-
-- No undo/redo in text fields.
-- Text fields are single-line by default (multi-line is supported at the
-  internal layer but not yet exposed through the C API).
-- Scroll areas are vertical only.
 
 ## License
 
