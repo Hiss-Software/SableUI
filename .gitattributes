@@ -1,0 +1,14 @@
+* text=auto
+*.c text
+*.h text
+*.hpp text
+*.cpp text
+*.txt text
+*.md text
+CMakeLists.txt text
+*.gitattributes text
+*.gitignore text
+*.bat text eol=crlf
+*.sh text eol=lf
+*.png binary
+*.ico binary
