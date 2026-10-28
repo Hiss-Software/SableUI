@@ -97,6 +97,11 @@ struct Widget {
     // Scroll offset in DIPs: horizontal for text fields, vertical for
     // scroll areas.
     int scrollOff = 0;
+    // Layout anchors (bits from sableui.h SAB_ANCHOR_*): when non-zero, the
+    // widget keeps its margins to the window client area across resizes.
+    // Top-level widgets only (owner < 0).
+    unsigned anchors = 0;
+    int ml = 0, mt = 0, mr = 0, mb = 0;  // captured margins, DIPs
 };
 
 // Abstract rendering surface. A future backend (Direct3D, software) can be
@@ -599,6 +604,26 @@ public:
         if (!Valid(areaId) ||
             widgets_[areaId].kind != WidgetKind::ScrollArea) return -1;
         return widgets_[areaId].scrollOff;
+    }
+
+    // --- Layout anchors --------------------------------------------------------
+
+    // Captures the widget's current rect as the anchor reference. Top-level
+    // widgets only: children of scroll areas live in content coordinates
+    // and scroll with the content, so anchoring them is meaningless.
+    bool SetWidgetAnchors(int id, unsigned anchors) {
+        if (!Valid(id)) return false;
+        Widget& w = widgets_[id];
+        if (w.owner >= 0) return false;
+        w.anchors = anchors;
+        int cw = 0, ch = 0;
+        ClientSize(&cw, &ch);
+        w.ml = w.x;
+        w.mt = w.y;
+        w.mr = cw - (w.x + w.w);
+        w.mb = ch - (w.y + w.h);
+        Invalidate();
+        return true;
     }
 
     std::wstring GetWidgetText(int id) const {
@@ -1203,6 +1228,9 @@ private:
         case WM_SIZE:
             // Physical pixels to the renderer, DIPs to the callback.
             renderer_.OnResize(LOWORD(lp), HIWORD(lp));
+            // Skip anchoring while minimized: a zero-sized client area would
+            // collapse anchored widgets and freeze their margins at zero.
+            if (wp != SIZE_MINIMIZED) ApplyAnchors();
             SafeCall(on_resize_, PxToDip(LOWORD(lp)), PxToDip(HIWORD(lp)));
             Invalidate();
             return 0;
@@ -1307,6 +1335,34 @@ private:
                      c.g * k + bg.g * (1.0f - k),
                      c.b * k + bg.b * (1.0f - k),
                      c.a};
+    }
+
+    // Re-applies anchors after the client area changed. Margins were
+    // captured by SetWidgetAnchors; non-anchored edges keep their current
+    // coordinate or size.
+    void ApplyAnchors() {
+        int cw = 0, ch = 0;
+        ClientSize(&cw, &ch);
+        for (std::size_t i = 0; i < widgets_.size(); ++i) {
+            Widget& w = widgets_[i];
+            if (w.owner >= 0 || w.anchors == 0) continue;
+            const unsigned a = w.anchors;
+            if ((a & kAnchorLeft) && (a & kAnchorRight)) {
+                w.x = w.ml;
+                w.w = std::max(1, cw - w.ml - w.mr);
+            } else if (a & kAnchorRight) {
+                w.x = cw - w.mr - w.w;  // keep size, pin right edge
+            }
+            if ((a & kAnchorTop) && (a & kAnchorBottom)) {
+                w.y = w.mt;
+                w.h = std::max(1, ch - w.mt - w.mb);
+            } else if (a & kAnchorBottom) {
+                w.y = ch - w.mb - w.h;
+            }
+            if (w.kind == WidgetKind::ScrollArea) {
+                ClampScrollOffset(w, static_cast<int>(i));
+            }
+        }
     }
 
     void Render() {
@@ -1916,6 +1972,9 @@ private:
     static constexpr int kScrollLineDip = 48;     // wheel step for scroll areas
     static constexpr int kScrollPadDip = 4;
     static constexpr int kCaretTimerId = 0;       // reserved blink timer id
+    // Layout anchor bits (kept in sync with SAB_ANCHOR_* in sableui.h).
+    static constexpr unsigned kAnchorLeft = 1, kAnchorTop = 2,
+                              kAnchorRight = 4, kAnchorBottom = 8;
     static constexpr wchar_t kClassName[] = L"SableUIWindow";
 
     HWND hwnd_ = nullptr;

@@ -222,6 +222,34 @@ SABLEUI_API int sabSetWidgetChecked(sabWindow window, sabWidgetId id, int on);
 // Returns 1 if the widget is a checked checkbox, 0 otherwise.
 SABLEUI_API int sabIsWidgetChecked(sabWindow window, sabWidgetId id);
 
+// --- Layout anchors --------------------------------------------------------------
+
+// Each anchored edge keeps its current distance (margin) to the window client
+// area when the window is resized. Anchoring opposite edges stretches the
+// widget. Only top-level widgets can be anchored: sabSetWidgetAnchors fails
+// for widgets inside scroll areas.
+enum {
+    SAB_ANCHOR_NONE   = 0x0,
+    SAB_ANCHOR_LEFT   = 0x1,
+    SAB_ANCHOR_TOP    = 0x2,
+    SAB_ANCHOR_RIGHT  = 0x4,
+    SAB_ANCHOR_BOTTOM = 0x8
+};
+
+#define SAB_LAYOUT_FILL_H       (SAB_ANCHOR_LEFT | SAB_ANCHOR_RIGHT)
+#define SAB_LAYOUT_FILL_V       (SAB_ANCHOR_TOP | SAB_ANCHOR_BOTTOM)
+#define SAB_LAYOUT_FILL         (SAB_LAYOUT_FILL_H | SAB_LAYOUT_FILL_V)
+#define SAB_LAYOUT_TOP_LEFT     (SAB_ANCHOR_LEFT | SAB_ANCHOR_TOP)
+#define SAB_LAYOUT_TOP_RIGHT    (SAB_ANCHOR_RIGHT | SAB_ANCHOR_TOP)
+#define SAB_LAYOUT_BOTTOM_LEFT  (SAB_ANCHOR_LEFT | SAB_ANCHOR_BOTTOM)
+#define SAB_LAYOUT_BOTTOM_RIGHT (SAB_ANCHOR_RIGHT | SAB_ANCHOR_BOTTOM)
+
+// Captures the widget's current position as the anchor reference. Call once
+// after creating the widget. Returns 1 on success, 0 on failure (bad id or
+// the widget lives inside a scroll area); check sabGetLastError.
+SABLEUI_API int sabSetWidgetAnchors(sabWindow window, sabWidgetId id,
+                                    unsigned anchors);
+
 // --- Scroll areas ----------------------------------------------------------------
 
 // Adds a vertical scroll area. Widgets added with the sabAdd*In functions

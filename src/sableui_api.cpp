@@ -268,6 +268,24 @@ int sabIsWidgetChecked(sabWindow window, sabWidgetId id) {
     return (win && win->IsChecked(id)) ? 1 : 0;
 }
 
+// --- Layout anchors -----------------------------------------------------------
+
+int sabSetWidgetAnchors(sabWindow window, sabWidgetId id, unsigned anchors) {
+    auto* win = reinterpret_cast<sableui::Window*>(window);
+    if (!win) {
+        SetError("sabSetWidgetAnchors: invalid argument");
+        return 0;
+    }
+    try {
+        return win->SetWidgetAnchors(id, anchors) ? 1 : 0;
+    } catch (const std::exception& e) {
+        SetError(std::string("sabSetWidgetAnchors: ") + e.what());
+    } catch (...) {
+        SetError("sabSetWidgetAnchors: unknown error");
+    }
+    return 0;
+}
+
 // --- Drawing (paint callback only) -------------------------------------------
 
 void sabSetFillColor(sabWindow window, float r, float g, float b, float a) {
