@@ -10,9 +10,7 @@
 // Known limitations:
 //   - no IME composition (Chinese/Japanese/Korean input); WM_CHAR covers
 //     Latin and Cyrillic keyboard layouts;
-//   - no undo/redo in text fields;
-//   - removing a scroll area detaches its children as top-level widgets with
-//     stale (relative) coordinates.
+//   - no undo/redo in text fields.
 //
 // Link with: -ld2d1 -ldwrite -ldwmapi -lole32
 
@@ -111,7 +109,10 @@ class Renderer {
 public:
     virtual ~Renderer() = default;
     virtual bool Begin(HWND hwnd) = 0;
-    virtual void End() = 0;
+    // Returns true if the device is still usable. On D2DERR_RECREATE_TARGET
+    // the backend drops its target and returns false; the caller should
+    // schedule a repaint.
+    virtual bool End() = 0;
     virtual void SetScale(float scale) = 0;
     virtual void Clear(const Color& color) = 0;
     virtual void PushClipRect(float x, float y, float w, float h) = 0;
@@ -164,11 +165,16 @@ public:
         return true;
     }
 
-    void End() override {
-        if (!target_) return;
-        if (target_->EndDraw() == D2DERR_RECREATE_TARGET) {
-            DiscardTarget();  // device lost: recreated on the next Begin()
+    bool End() override {
+        if (!target_) return true;
+        const HRESULT hr = target_->EndDraw();
+        if (hr == D2DERR_RECREATE_TARGET) {
+            // Device lost: drop the device-dependent resources but keep the
+            // (expensive) factories — they survive a target loss just fine.
+            DiscardTarget();
+            return false;
         }
+        return SUCCEEDED(hr);
     }
 
     void SetScale(float scale) override {
@@ -290,9 +296,18 @@ public:
         if (!raw) return 0;
         Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
         layout.Attach(raw);
+        // Query the actual line height so we hit-test against a real Y
+        // inside the first line instead of a magic constant.
+        DWRITE_LINE_METRICS lm{};
+        UINT32 lineCount = 0;
+        FLOAT y = 1.0f;
+        if (SUCCEEDED(layout->GetLineMetrics(&lm, 1, &lineCount)) &&
+            lineCount > 0) {
+            y = lm.baseline * 0.5f;
+        }
         BOOL trailing = FALSE, inside = FALSE;
         DWRITE_HIT_TEST_METRICS m{};
-        if (FAILED(layout->HitTestPoint(x, 1.0f, &trailing, &inside, &m)))
+        if (FAILED(layout->HitTestPoint(x, y, &trailing, &inside, &m)))
             return 0;
         return std::clamp(static_cast<int>(m.textPosition) + (trailing ? 1 : 0),
                           0, static_cast<int>(text.size()));
@@ -385,12 +400,12 @@ private:
         return true;
     }
 
+    // Drops only the device-dependent resources. The D2D and DWrite
+    // factories survive a target loss and must not be recreated.
     void DiscardTarget() {
         formats_.clear();
-        write_   = nullptr;
         brush_   = nullptr;
         target_  = nullptr;
-        factory_ = nullptr;
     }
 
     Microsoft::WRL::ComPtr<ID2D1Factory> factory_;
@@ -703,12 +718,25 @@ public:
         } else if (focused_ > id) {
             --focused_;
         }
-        if (text_hit_ == id) text_hit_ = -1;
-        else if (text_hit_ > id) --text_hit_;
-        if (scroll_drag_ == id) scroll_drag_ = -1;
-        else if (scroll_drag_ > id) --scroll_drag_;
-        // Children of a removed scroll area become top-level widgets; their
-        // coordinates stay relative and may need manual adjustment.
+        AdjustIndexForRemoval(text_hit_, id);
+        AdjustIndexForRemoval(scroll_drag_, id);
+
+        // If the widget being removed is a scroll area, convert its children
+        // back to top-level widgets, translating their relative coordinates
+        // into the window's coordinate space so they stay where they were.
+        {
+            const Widget removed = widgets_[id];
+            if (removed.kind == WidgetKind::ScrollArea) {
+                for (auto& w : widgets_) {
+                    if (w.owner == id) {
+                        w.x += removed.x;
+                        w.y += removed.y - removed.scrollOff;
+                        w.owner = -1;
+                    }
+                }
+            }
+        }
+
         auto fixOwner = [id](int& owner) {
             if (owner == id) owner = -1;
             else if (owner > id) --owner;
@@ -726,18 +754,14 @@ public:
         widgets_.erase(widgets_.begin() + id);
         widgets_.push_back(std::move(w));
         const int last = static_cast<int>(widgets_.size()) - 1;
-        auto fix = [id, last](int& idx) {
-            if (idx == id) idx = last;
-            else if (idx > id) --idx;
-        };
-        fix(hover_);
-        fix(pressed_);
-        fix(focused_);
-        if (text_hit_ == id) text_hit_ = last;
-        else if (text_hit_ > id) --text_hit_;
-        if (scroll_drag_ == id) scroll_drag_ = last;
-        else if (scroll_drag_ > id) --scroll_drag_;
-        for (auto& w : widgets_) fix(w.owner);
+
+        AdjustIndexForMove(hover_, id, last);
+        AdjustIndexForMove(pressed_, id, last);
+        AdjustIndexForMove(focused_, id, last);
+        AdjustIndexForMove(text_hit_, id, last);
+        AdjustIndexForMove(scroll_drag_, id, last);
+
+        for (auto& w2 : widgets_) AdjustIndexForMove(w2.owner, id, last);
         Invalidate();
         return true;
     }
@@ -1011,7 +1035,7 @@ private:
                 if (hw.kind == WidgetKind::TextField) {
                     focused_ = hit;
                     text_hit_ = hit;
-                    const int caret = TextFieldCaretAt(hw, x);
+                    const int caret = TextFieldCaretAt(hit, x);
                     SetCaret(hw, caret,
                              (GetKeyState(VK_SHIFT) & 0x8000) != 0);
                 } else if (hw.kind == WidgetKind::ScrollArea) {
@@ -1045,7 +1069,7 @@ private:
                 focused_ = hit;
                 text_hit_ = hit;
                 EnsureCaretTimer();
-                SelectWord(widgets_[hit], TextFieldCaretAt(widgets_[hit], x));
+                SelectWord(widgets_[hit], TextFieldCaretAt(hit, x));
                 Invalidate();
                 return 0;
             }
@@ -1116,7 +1140,7 @@ private:
             const int y = PxToDip(GET_Y_LPARAM(lp));
             if (text_hit_ >= 0) {
                 Widget& tf = widgets_[text_hit_];
-                const int caret = TextFieldCaretAt(tf, x);
+                const int caret = TextFieldCaretAt(text_hit_, x);
                 if (caret != tf.caret) {
                     SetCaret(tf, caret, true);
                     Invalidate();
@@ -1231,6 +1255,12 @@ private:
             // Skip anchoring while minimized: a zero-sized client area would
             // collapse anchored widgets and freeze their margins at zero.
             if (wp != SIZE_MINIMIZED) ApplyAnchors();
+            // Clamp scroll offsets for every scroll area, not only anchored
+            // ones: a manual resize can still require re-clamping.
+            for (int i = 0; i < static_cast<int>(widgets_.size()); ++i) {
+                if (widgets_[i].kind == WidgetKind::ScrollArea)
+                    ClampScrollOffset(widgets_[i], i);
+            }
             SafeCall(on_resize_, PxToDip(LOWORD(lp)), PxToDip(HIWORD(lp)));
             Invalidate();
             return 0;
@@ -1318,6 +1348,18 @@ private:
             return 0;
         }
 
+        // Stop the caret blink when the window loses activation: otherwise
+        // it keeps repainting while the app is in the background.
+        case WM_KILLFOCUS:
+            if (hwnd_) KillTimer(hwnd_, kCaretTimerId);
+            caret_on_ = false;
+            Invalidate();
+            return 0;
+
+        case WM_SETFOCUS:
+            EnsureCaretTimer();
+            return 0;
+
         case WM_DESTROY:
             hwnd_ = nullptr;
             running_ = false;
@@ -1335,6 +1377,17 @@ private:
                      c.g * k + bg.g * (1.0f - k),
                      c.b * k + bg.b * (1.0f - k),
                      c.a};
+    }
+
+    // Background a widget actually sits on; used by DimColor so a disabled
+    // widget inside a scroll area fades toward the field background, not the
+    // window background.
+    Color BackgroundFor(const Widget& w) const {
+        if (w.owner >= 0 && Valid(w.owner) &&
+            widgets_[w.owner].kind == WidgetKind::ScrollArea) {
+            return palette_.fieldBg;
+        }
+        return palette_.background;
     }
 
     // Re-applies anchors after the client area changed. Margins were
@@ -1358,9 +1411,6 @@ private:
                 w.h = std::max(1, ch - w.mt - w.mb);
             } else if (a & kAnchorBottom) {
                 w.y = ch - w.mb - w.h;
-            }
-            if (w.kind == WidgetKind::ScrollArea) {
-                ClampScrollOffset(w, static_cast<int>(i));
             }
         }
     }
@@ -1400,7 +1450,10 @@ private:
                                       9.0f, palette_.accentHover, 2.0f);
         }
 
-        renderer_.End();
+        if (!renderer_.End()) {
+            // Device lost: the target was dropped, schedule a repaint.
+            Invalidate();
+        }
     }
 
     // Draws one scroll area: background, its children (clipped and offset by
@@ -1433,6 +1486,7 @@ private:
     void DrawWidget(Widget& w, int id, int ox, int oy) {
         const float fx = float(w.x + ox);
         const float fy = float(w.y + oy);
+        const Color bg = BackgroundFor(w);
 
         if (w.kind == WidgetKind::Button) {
             // A pressed button looks pressed only while the cursor is over
@@ -1444,12 +1498,11 @@ private:
                 ? (pressed_look ? palette_.accentPressed
                    : id == hover_ ? palette_.accentHover
                                   : palette_.accent)
-                : DimColor(palette_.accent, palette_.background);
+                : DimColor(palette_.accent, bg);
             renderer_.FillRoundedRect(fx, fy, float(w.w), float(w.h), 8.0f, fill);
             renderer_.DrawTextIn(fx, fy, float(w.w), float(w.h), w.text,
                                  w.enabled ? palette_.buttonText
-                                           : DimColor(palette_.buttonText,
-                                                      palette_.background),
+                                           : DimColor(palette_.buttonText, bg),
                                  TextAlign::Center, 15.0f);
         } else if (w.kind == WidgetKind::Checkbox) {
             constexpr float box = 16.0f;
@@ -1459,15 +1512,14 @@ private:
                                       w.checked
                                           ? (w.enabled
                                                  ? palette_.accent
-                                                 : DimColor(palette_.accent,
-                                                            palette_.background))
+                                                 : DimColor(palette_.accent, bg))
                                           : off);
             renderer_.DrawRoundedRect(fx, cy, box, box, 3.0f,
                                       palette_.border, 1.0f);
             if (w.checked) {
                 const Color check = w.enabled
                     ? palette_.buttonText
-                    : DimColor(palette_.buttonText, palette_.background);
+                    : DimColor(palette_.buttonText, bg);
                 renderer_.DrawLine(fx + 4.0f, cy + 8.0f, fx + 7.0f,
                                    cy + 11.0f, check, 2.0f);
                 renderer_.DrawLine(fx + 7.0f, cy + 11.0f, fx + 12.0f,
@@ -1476,8 +1528,7 @@ private:
             renderer_.DrawTextIn(fx + box + 8.0f, fy, float(w.w) - box - 8.0f,
                                  float(w.h), w.text,
                                  w.enabled ? palette_.labelText
-                                           : DimColor(palette_.labelText,
-                                                      palette_.background),
+                                           : DimColor(palette_.labelText, bg),
                                  TextAlign::Left, 15.0f);
         } else if (w.kind == WidgetKind::TextField) {
             constexpr float pad = kFieldPadDip;
@@ -1492,8 +1543,7 @@ private:
             if (!w.enabled) {
                 renderer_.DrawTextIn(fx + pad, fy, float(w.w) - 2.0f * pad,
                                      float(w.h), DisplayText(w),
-                                     DimColor(palette_.labelText,
-                                              palette_.background),
+                                     DimColor(palette_.labelText, bg),
                                      TextAlign::Left, font);
                 return;
             }
@@ -1530,28 +1580,56 @@ private:
             renderer_.PopClipRect();
         } else {  // Label
             renderer_.DrawTextIn(fx, fy, float(w.w), float(w.h), w.text,
-                                 palette_.labelText, TextAlign::Left, 15.0f);
+                                 w.enabled ? palette_.labelText
+                                           : DimColor(palette_.labelText, bg),
+                                 TextAlign::Left, 15.0f);
         }
+    }
+
+    // Maps a widget's logical position (x, y) into window coordinates for
+    // hit-testing, drawing and caret math. Owned widgets get the owner's
+    // origin and scroll offset applied; the caller also learns whether the
+    // point actually lies inside the owner's visible viewport.
+    bool MapToWindow(int id, int* wx, int* wy, int* ow, int* oh) const {
+        const Widget& w = widgets_[id];
+        if (w.owner < 0) {
+            *wx = w.x;
+            *wy = w.y;
+            *ow = 0;
+            *oh = 0;
+            return true;
+        }
+        const Widget& o = widgets_[w.owner];
+        *wx = o.x + w.x;
+        *wy = o.y + w.y - o.scrollOff;
+        *ow = o.w;
+        *oh = o.h;
+        return true;
     }
 
     int HitTest(int x, int y) const {
         // Topmost widget wins. Owned widgets are tested in the same pass as
-        // top-level ones (their coordinates are mapped through the owning
-        // scroll area); scroll areas themselves are hit only if no widget
-        // under the cursor claims the point.
+        // top-level ones; both the pointer and the widget's mapped rect must
+        // lie inside the owner's visible viewport (otherwise a widget
+        // scrolled out of view would still be clickable).
         for (int i = static_cast<int>(widgets_.size()) - 1; i >= 0; --i) {
             const Widget& w = widgets_[i];
             if (!w.visible || !w.enabled) continue;
             if (w.kind == WidgetKind::Label) continue;
             if (w.kind == WidgetKind::ScrollArea) continue;
-            int wx = w.x;
-            int wy = w.y;
+            int wx, wy, ow, oh;
+            MapToWindow(i, &wx, &wy, &ow, &oh);
             if (w.owner >= 0) {
                 const Widget& o = widgets_[w.owner];
                 if (!o.visible || !o.enabled) continue;
+                // Pointer must be inside the owner's viewport.
                 if (x < o.x || x >= o.x + o.w) continue;
                 if (y < o.y || y >= o.y + o.h) continue;
-                wy = w.y - o.scrollOff;
+                // And the mapped widget rect must be inside it as well.
+                if (wy < o.y || wy + w.h > o.y + o.h) {
+                    // Still allow if the pointer is over the visible part.
+                    if (y < wy || y >= wy + w.h) continue;
+                }
             }
             if (x >= wx && x < wx + w.w && y >= wy && y < wy + w.h) return i;
         }
@@ -1631,6 +1709,16 @@ private:
         return id >= 0 && id < static_cast<int>(widgets_.size());
     }
 
+    static void AdjustIndexForRemoval(int& idx, int removed) {
+        if (idx == removed) idx = -1;
+        else if (idx > removed) --idx;
+    }
+
+    static void AdjustIndexForMove(int& idx, int from, int to) {
+        if (idx == from) idx = to;
+        else if (idx > from) --idx;
+    }
+
     // --- Text field internals ---------------------------------------------------
 
     // What is actually rendered: '*' for masked fields, the text otherwise.
@@ -1639,10 +1727,14 @@ private:
         return std::wstring(tf.text.size(), L'*');
     }
 
-    // Caret index under a window-space x coordinate (DIPs).
-    int TextFieldCaretAt(const Widget& tf, int xDip) {
+    // Caret index under a window-space x coordinate (DIPs). Uses the widget's
+    // mapped window position so text fields inside scroll areas work too.
+    int TextFieldCaretAt(int id, int xDip) {
+        const Widget& tf = widgets_[id];
+        int wx, wy, ow, oh;
+        MapToWindow(id, &wx, &wy, &ow, &oh);
         const std::wstring disp = DisplayText(tf);
-        const float lx = float(xDip) - (float(tf.x) + kFieldPadDip) +
+        const float lx = float(xDip) - (float(wx) + kFieldPadDip) +
                          float(tf.scrollOff);
         return renderer_.TextIndexAtX(disp, kFieldFontDip, lx);
     }
@@ -1818,25 +1910,31 @@ private:
         if (tf.selEnd <= tf.selStart) return false;
         const std::wstring sel =
             tf.text.substr(tf.selStart, tf.selEnd - tf.selStart);
-        if (!OpenClipboard(hwnd_)) return false;
-        EmptyClipboard();
-        const SIZE_T bytes = (sel.size() + 1) * sizeof(wchar_t);
-        HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, bytes);
-        if (g) {
-            if (void* p = GlobalLock(g)) {
-                std::memcpy(p, sel.c_str(), bytes);
-                GlobalUnlock(g);
-                if (!SetClipboardData(CF_UNICODETEXT, g)) GlobalFree(g);
-            } else {
-                GlobalFree(g);
+        bool copied = false;
+        if (OpenClipboard(hwnd_)) {
+            EmptyClipboard();
+            const SIZE_T bytes = (sel.size() + 1) * sizeof(wchar_t);
+            HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, bytes);
+            if (g) {
+                if (void* p = GlobalLock(g)) {
+                    std::memcpy(p, sel.c_str(), bytes);
+                    GlobalUnlock(g);
+                    if (SetClipboardData(CF_UNICODETEXT, g)) {
+                        copied = true;  // ownership transferred to the system
+                    } else {
+                        GlobalFree(g);
+                    }
+                } else {
+                    GlobalFree(g);
+                }
             }
+            CloseClipboard();
         }
-        CloseClipboard();
-        if (g && cut) {
+        if (copied && cut) {
             DeleteSelection(tf);
             AfterTextFieldEdit(tf);
         }
-        return g != nullptr;
+        return copied;
     }
 
     void PasteFromClipboard(Widget& tf) {
@@ -1857,10 +1955,13 @@ private:
     }
 
     // Starts/stops the caret blink timer so it only runs while a text field
-    // holds focus. kCaretTimerId is reserved; user timer ids start at 1.
+    // holds focus and the window is active. kCaretTimerId is reserved; user
+    // timer ids start at 1.
     void EnsureCaretTimer() {
         const bool need = focused_ >= 0 &&
-                          widgets_[focused_].kind == WidgetKind::TextField;
+                          widgets_[focused_].kind == WidgetKind::TextField &&
+                          hwnd_ &&
+                          GetFocus() == hwnd_;
         if (need) {
             if (hwnd_) SetTimer(hwnd_, kCaretTimerId, 500, nullptr);
             caret_on_ = true;
@@ -2228,9 +2329,10 @@ SABLEUI_API sabWidgetId sabAddTextField(sabWindow window, int x, int y, int w, i
 SABLEUI_API int sabSetLabelText(sabWindow window, sabWidgetId id, const wchar_t* text);
 
 // Copies the widget text (buttons, labels, text fields) into buffer.
-// Returns the text length in characters on success. If the buffer is too
-// small, nothing is written, the required length is returned and
-// sabGetLastError is set.
+// Returns the text length in characters. If the buffer is too small, the
+// required length is returned (including the NUL terminator) and
+// sabGetLastError is set; compare the return value against buffer_chars to
+// detect the truncation case.
 SABLEUI_API int sabGetWidgetText(sabWindow window, sabWidgetId id,
                                  wchar_t* buffer, int buffer_chars);
 
