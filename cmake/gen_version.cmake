@@ -6,6 +6,11 @@ set(VER "0.0.0-unknown")
 find_package(Git QUIET)
 if(GIT_FOUND)
     execute_process(
+        COMMAND ${GIT_EXECUTABLE} update-index -q --refresh
+        WORKING_DIRECTORY ${GIT_DIR}
+        OUTPUT_QUIET ERROR_QUIET
+    )
+    execute_process(
         COMMAND ${GIT_EXECUTABLE} describe --tags --long --dirty
         WORKING_DIRECTORY ${GIT_DIR}
         OUTPUT_VARIABLE VER
